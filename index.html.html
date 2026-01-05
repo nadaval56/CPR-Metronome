@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#e74c3c">
+    <title>אפליקציית החייאה - CPR Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            user-select: none;
+        }
+
+        .container {
+            background: white;
+            border-radius: 30px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .timer-display {
+            font-size: 72px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 30px 0;
+            font-variant-numeric: tabular-nums;
+            direction: ltr;
+        }
+
+        .control-button {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            border: none;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 20px auto;
+            display: block;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .control-button.start {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+        }
+
+        .control-button.start:hover {
+            transform: scale(1.05);
+            box-shadow: 0 15px 40px rgba(46, 204, 113, 0.4);
+        }
+
+        .control-button.stop {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            animation: pulse 0.5s infinite;
+        }
+
+        .control-button.stop:hover {
+            transform: scale(1.05);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+
+        .info-box {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 15px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #34495e;
+        }
+
+        .info-box strong {
+            color: #e74c3c;
+        }
+
+        .beat-indicator {
+            width: 20px;
+            height: 20px;
+            background: #95a5a6;
+            border-radius: 50%;
+            margin: 20px auto;
+            transition: all 0.1s ease;
+        }
+
+        .beat-indicator.active {
+            background: #e74c3c;
+            transform: scale(1.5);
+            box-shadow: 0 0 20px rgba(231, 76, 60, 0.6);
+        }
+
+        .last-session {
+            margin-top: 20px;
+            padding: 10px;
+            background: #fff3cd;
+            border-radius: 10px;
+            font-size: 13px;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚕️ החייאה</h1>
+        <p class="subtitle">מטרונום ושעון עצר להחייאה</p>
+        
+        <div class="beat-indicator" id="beatIndicator"></div>
+        
+        <div class="timer-display" id="timer">00:00</div>
+        
+        <button class="control-button start" id="controlButton">
+            התחל החייאה
+        </button>
+        
+        <div class="info-box">
+            <strong>קצב:</strong> 100-120 לחיצות לדקה<br>
+            <strong>עומק:</strong> 5-6 ס"מ<br>
+            <strong>יחס:</strong> 30 לחיצות : 2 נשימות
+        </div>
+        
+        <div class="last-session" id="lastSession" style="display: none;">
+            סשן קודם: <span id="lastTime"></span>
+        </div>
+    </div>
+
+    <script>
+        let isRunning = false;
+        let startTime = 0;
+        let elapsedTime = 0;
+        let timerInterval = null;
+        let metronomeInterval = null;
+        let audioContext = null;
+        
+        const button = document.getElementById('controlButton');
+        const timerDisplay = document.getElementById('timer');
+        const beatIndicator = document.getElementById('beatIndicator');
+        const lastSessionDiv = document.getElementById('lastSession');
+        const lastTimeSpan = document.getElementById('lastTime');
+
+        // Create AudioContext for beep sound
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // Play beep sound
+        function playBeep() {
+            initAudio();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 800; // Hz
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+            
+            // Visual feedback
+            beatIndicator.classList.add('active');
+            setTimeout(() => beatIndicator.classList.remove('active'), 100);
+        }
+
+        // Format time display
+        function formatTime(ms) {
+            const totalSeconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        // Update timer display
+        function updateTimer() {
+            const currentTime = Date.now() - startTime + elapsedTime;
+            timerDisplay.textContent = formatTime(currentTime);
+        }
+
+        // Start CPR
+        function startCPR() {
+            isRunning = true;
+            startTime = Date.now();
+            
+            // Update button
+            button.textContent = 'עצור';
+            button.classList.remove('start');
+            button.classList.add('stop');
+            
+            // Start timer
+            timerInterval = setInterval(updateTimer, 100);
+            
+            // Start metronome (110 BPM = ~545ms interval)
+            const bpm = 110;
+            const interval = 60000 / bpm;
+            
+            metronomeInterval = setInterval(() => {
+                playBeep();
+            }, interval);
+            
+            // First beep immediately
+            playBeep();
+        }
+
+        // Stop CPR
+        function stopCPR() {
+            isRunning = false;
+            
+            // Clear intervals
+            clearInterval(timerInterval);
+            clearInterval(metronomeInterval);
+            
+            // Save last session
+            const finalTime = timerDisplay.textContent;
+            try {
+                localStorage.setItem('lastCPRTime', finalTime);
+            } catch (e) {
+                // localStorage not available, skip saving
+            }
+            
+            // Show last session
+            lastTimeSpan.textContent = finalTime;
+            lastSessionDiv.style.display = 'block';
+            
+            // Update button
+            button.textContent = 'התחל החייאה';
+            button.classList.remove('stop');
+            button.classList.add('start');
+            
+            // Reset counters
+            elapsedTime = 0;
+            timerDisplay.textContent = '00:00';
+        }
+
+        // Button click handler
+        button.addEventListener('click', () => {
+            if (!isRunning) {
+                startCPR();
+            } else {
+                stopCPR();
+            }
+        });
+
+        // Load last session on startup
+        window.addEventListener('load', () => {
+            try {
+                const lastTime = localStorage.getItem('lastCPRTime');
+                if (lastTime) {
+                    lastTimeSpan.textContent = lastTime;
+                    lastSessionDiv.style.display = 'block';
+                }
+            } catch (e) {
+                // localStorage not available, skip loading
+            }
+        });
+    </script>
+</body>
+</html>
